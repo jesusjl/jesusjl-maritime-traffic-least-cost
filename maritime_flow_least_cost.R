@@ -1,30 +1,18 @@
 ## ---------------------------
 ##
-## Script name: maritime flow dataset
+## Script name: Maritime traffic analysis
 ##
-## Purpose of script:  gather datasets to model maritime flow
+## Purpose of script:  Visualization of maritime traffic to Madeira Island
 ##
 ## Author: Jesús Jiménez López
 ##
-## Date Created: 2019-08-13
+## Date Created: 2020-01-24
 ##
-## Copyright (c) Jesús Jiménez López, 2019
-##
-## ---------------------------
-##
-## Notes:
-##
+## Copyright (c) Jesús Jiménez López, 2020
 ##
 ## ---------------------------
 
-## set working directory
-
-# setwd("~")      # (mac, linux)
-# setwd("C:/Users/")    # (PC)
-
-## ---------------------------
-
-## load up required packages
+## load required packages
 
 
 library(dplyr)
@@ -50,16 +38,7 @@ library(smoothr)
 library(grid)
 library(gridExtra)
 
-
-## ---------------------------
-
-## load up custom functions
-
-# source("functions/example.R")
-
-## ---------------------------
-
-## read data
+## read dataset
 
 data.df <- read_excel(path  = 'input/maritime_flow.xlsx',
                       sheet = 1, skip = 1,
@@ -70,9 +49,8 @@ data.df <- read_excel(path  = 'input/maritime_flow.xlsx',
                                     "Vessel name"	,"Procv Tonnage","Ton"))
 
 
-## ---------------------------
 
-## clean data
+## clean dataset
 
 data.df <- data.df[!is.na(data.df$Lat), ] # remove na values
 data.df <- data.df[!is.na(data.df$Long), ]
@@ -113,7 +91,7 @@ data.df.gr.factor <- bind_cols(data.df.gr.factor,
                                data.frame(end_lon=rep(mad.sp@coords[1], dim(data.df.gr.factor)[1]),
                                           end_lat=rep(mad.sp@coords[2], dim(data.df.gr.factor)[1]))) # https://rdrr.io/cran/dplyr/man/bind.html
 
-## ---------------------------
+## load world map and convert to raster
 
 data(wrld_simpl)
 
@@ -126,31 +104,32 @@ worldExtentRaster <- r
 ## Cost surfaces / Resistance surfaces / Conductance
 
 
-# Simple example # https://www.r-bloggers.com/computing-maritime-routes-in-r/
+# For reference see https://www.r-bloggers.com/computing-maritime-routes-in-r/
 
-#make all sea = -999
+# make missing values to sea = -999
 
 r[is.na(r)] <- -999
 
-#this turns all landmass to missing
+# make landmass to missing values
+
 r[r>-999] <- NA
 
-#assign unit cost to all grid cells in water
+# Assign unit cost to all grid cells in water
 
 r[r==-999] <- 1
 
 r <- raster::merge(r,r_rivers50.filtered)
 
-#this turns all landmass to missing
+# landmass to high cost
 
 r[is.na(r)] <- 100000
 
 
-# LatSurface[is.na(LatSurface[])] <- 1
+# downgrade resolution
 
 r <- aggregate(r, fact=2)
 
-# crop optional
+# Crop the analysis area to avoid unrealistic trips
 
 e1 <- extent(-150, 170,-52,0)
 e2 <- extent(-150, 170, 0, 75)
@@ -161,6 +140,9 @@ r <- raster::merge(crop1, crop2)
 r[r<100000] <- 0.00001
 
 sP <- cbind(c(-16.97253, 55), c(32.75176, -50))
+
+
+# Calculate shortest path
 
 if(file.exists('output/pathShortest_01.rds')) {
   
@@ -177,10 +159,7 @@ if(file.exists('output/pathShortest_01.rds')) {
 }
 
 
-
-# Inspect
-
-# Fix  dateline
+# Fix  dateline just in case
 
 merged.lines <- do.call(rbind, pathShortest)
 class(merged.lines)
@@ -192,14 +171,7 @@ merged.lines.sf <- st_as_sfc(merged.lines)
 merged.lines.sf <- merged.lines.sf %>%
   st_segmentize(units::set_units(100, km))
 
-# merged.lines.sf <- merged.lines.sf %>%
-#   mutate(geometry = (geometry + c(180,90)) %% c(360) - c(180,90))
-# 
-# merged.lines.sf <- merged.lines.sf %>%
-#   st_wrap_dateline(options = c("WRAPDATELINE=YES",  "DATELINEOFFSET=180"), quiet = TRUE) %>%
-#   sf::st_sf(crs = 4326)
-
-## plot
+## plot result
 
 ggplot() +
   geom_sf(data = merged.lines.sf) +
@@ -215,8 +187,12 @@ ggplot() +
 
 #######################################################
 
+
+# load some functions for plotting purposes 
+
 source('utils.R')
-# background layer (ocean and graticules)
+
+# create ocean and graticules layers
 
 bb <- make_bbox(c(-180, 180), c(-90, 90), spacing = c(NA, 0.1), proj = projection(mad.sp))
 
@@ -224,21 +200,22 @@ grat <- make_graticules(seq(-150, 180, 30), seq(-90, 90, 30),
                         spacing = c(10, 1), proj = projection(mad.sp))
 
 grat.sf <- st_as_sfc(grat)
+
 bb.sf <- st_as_sfc(bb)
 
 
-## Set breaks and build viridis palette
+## Set initial breaks and build viridis palette
 
 my_breaks  <- scales::pretty_breaks(10)(x = data.df.gr$n)
 my_breaks <-c(1, 10, 100, 500, 1000, 5000, 10000)
 
 pal <- (viridis(10))
 
-##
+## bind merged lines to dataset
 
 data.df.gr.sf <- (sf::st_bind_cols(data.df.gr,merged.lines.sf))
 
-## Conver ports to sf
+## Conver ports to sf object
 
 data.df.gr.pt <- data.df.gr %>%
   dplyr::select(Long, Lat) %>%
@@ -254,6 +231,8 @@ data.df.gr.pt <- data.df.gr %>%
 
 data.df.gr.pt <- data.df.gr.pt %>% group_by(Realname) %>% summarise(Long=max(Long), Lat=max(Lat), ncount=n())
 
+
+## Smooth paths using ksmooth algorithm 
 
 n<-0
 
@@ -271,7 +250,7 @@ for (i in 1:length(data.df.gr.sf$geometry)) {
   
 }
 
-## plot
+## plot whole period
 
 p <- data.df.gr.sf %>%
   arrange((n))  %>%
@@ -288,16 +267,6 @@ p <- data.df.gr.sf %>%
                         trans="log10",
                         breaks=my_breaks,
                         labels=my_breaks, colours=pal) +
-  # scale_color_gradientn(name = "Ships arriving to Madeira Island (whole period A - E) \n ",
-  #                       trans="log10",
-  #                       breaks=my_breaks,
-  #                       labels=my_breaks, colours=pal) +
-  # scale_color_gradientn(name = "Vessel Trips to Madeira Island (whole period A - E) \n ",
-  #                       trans="log10",
-  #                       breaks=my_breaks,
-  #                       labels=my_breaks, colours=pal) +
-  # scale_color_viridis(alpha = 0.1, begin = 0, end = 1, direction = 1,
-  #                     discrete = FALSE, option = "D",  trans="log10", breaks=my_breaks, labels=my_breaks) +
   guides(color = guide_colorbar(nbin = 256, title.position = "top",
                                 title.hjust = 0.5,
                                 size=7,
@@ -320,16 +289,12 @@ p <- data.df.gr.sf %>%
         axis.title.x = element_blank(), axis.title.y = element_blank()) +
         labs(x=NULL, y=NULL)
 
-
-#r <- ggdraw(p) + draw_plot_label("A - E", y = .975, x=0.435)
-
-
-
 r <- grid.arrange(textGrob("Period A-E: 1936 - 2004",
                            gp = gpar(fontsize = 12, fontface = "bold"),vjust=5),p,heights = c(0.1, 1))
 
 r
 
+# save
 
 ggsave(filename=paste0("output/map_", "total", ".pdf"), 
        plot = r,
@@ -345,7 +310,7 @@ ggsave(filename=paste0("output/map_", "total", ".tiff"),
        units = "mm")
 
 
-## zoomed
+## plot zoomed version of whole period
 
 z <- data.df.gr.sf %>%
   arrange((n))  %>%
@@ -362,16 +327,6 @@ z <- data.df.gr.sf %>%
                         trans="log10",
                         breaks=my_breaks,
                         labels=my_breaks, colours=pal) +
-  # scale_color_gradientn(name = "Ships arriving to Madeira Island (whole period A - E) \n ",
-  #                       trans="log10",
-  #                       breaks=my_breaks,
-  #                       labels=my_breaks, colours=pal) +
-  # scale_color_gradientn(name = "Vessel Trips to Madeira Island (whole period A - E) \n ",
-  #                       trans="log10",
-  #                       breaks=my_breaks,
-  #                       labels=my_breaks, colours=pal) +
-  # scale_color_viridis(alpha = 0.1, begin = 0, end = 1, direction = 1,
-  #                     discrete = FALSE, option = "D",  trans="log10", breaks=my_breaks, labels=my_breaks) +
   guides(color = guide_colorbar(nbin = 256, title.position = "top",
                                 title.hjust = 0.5,
                                 size=7,
@@ -407,7 +362,7 @@ ggsave(filename=paste0("output/map_", "total_zoomed", ".tiff"),
        dpi=600,
        units = "mm")
 
-## Every period
+## Arrange dataset to plot maritime traffic for each period
 
 data.df.gr.factor <- data.df %>% group_by(Realname, Factor) %>% summarise(Long=max(Long), Lat=max(Lat), n=n())
 
@@ -424,13 +379,14 @@ periods <- data.frame(Factor=c("A", "B", "C", "D", "E"),
 
 data.df.gr.factor <- left_join(data.df.gr.factor, periods, by = "Factor")
 
-##  plot
 
+##  plot maps for each period
 
-
-# do loop per factor period
+# function to plot all maps at once
 
 my_breaks <-c(1, 10, 100, 500, 1000, 2000, 3000)
+
+
 plot_period <- function(period) {
   
   pp <- data.df.gr.factor %>% 
@@ -449,16 +405,6 @@ plot_period <- function(period) {
                           trans="log10",
                           breaks=my_breaks,
                           labels=my_breaks, colours=pal) +
-    # scale_color_gradientn(name = paste0("Ships arriving to Madeira Island (period ", period, ")"),
-    #                       trans="log10",
-    #                       breaks=my_breaks,
-    #                       labels=my_breaks, colours=pal) +
-    # scale_color_gradientn(name = paste0("Vessel Trips to Madeira Island (period ", period, ")"),
-    #                       trans="log10",
-    #                       breaks=my_breaks,
-    #                       labels=my_breaks, colours=pal) +
-    # scale_color_viridis(alpha = 0.1, begin = 0, end = 1, direction = 1,
-    #                     discrete = FALSE, option = "D",  trans="log10", breaks=my_breaks, labels=my_breaks) +
     guides(color = guide_colorbar(nbin = 256, title.position = "top", 
                                   title.hjust = 0.5,
                                   size=7,
@@ -546,9 +492,7 @@ plot_period <- function(period) {
   
   s <- ggdraw(pp) + draw_plot_label(period_label, y = 0.975, x = -0.08, size=12)
   
-  
-  #s <- ggdraw(pp) + draw_plot_label(period,  y = 0.975, x = 0)
-  
+
   ggsave(filename=paste0("output/map_", period, "_zoomed", ".pdf"), 
          plot = s,
          device = cairo_pdf,
