@@ -1,0 +1,43 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+library(knitr)
+```
+
+
+
+
+```{r}
+library(png)
+library(jpeg)
+library(grid)
+library(gridExtra)
+mapA <-  rasterGrob(as.raster(readJPEG("output/map_A.jpg")), interpolate = FALSE)
+mapB <-  rasterGrob(as.raster(readJPEG("output/map_B.jpg")), interpolate = FALSE)
+mapC <-  rasterGrob(as.raster(readJPEG("output/map_C.jpg")), interpolate = FALSE)
+mapD <-  rasterGrob(as.raster(readJPEG("output/map_D.jpg")), interpolate = FALSE)
+mapE <-  rasterGrob(as.raster(readJPEG("output/map_E.jpg")), interpolate = FALSE)
+maptotal <-  rasterGrob(as.raster(readJPEG("output/map_total.jpg")), interpolate = FALSE)
+```
+
+Save
+
+2 ways 
+
+```{r}
+pdf("output/maps.pdf", width = 8, height = 12, paper = "A4") # Open a new pdf file
+grid.arrange(mapA, mapB, mapC, mapD, mapE, maptotal ,ncol = 2, nrow=3)
+dev.off() # Close the file
+```
+
+
+
+```{r}
+#save
+ g <- arrangeGrob(plot1, plot2, plot3, nrow=3) #generates g
+ ggsave(file="whatever.pdf", g) #saves g
+```
+
